@@ -84,7 +84,7 @@ class SelectorBIC(ModelSelector):
         best_hmm_model = None
         best_hmm_model_bic = float("inf")
 
-        # TODO implement model selection based on BIC scores
+        # implement model selection based on BIC scores
         for num_states in range(self.min_n_components, self.max_n_components + 1):
             try:
                 hmm_model = self.base_model(num_states)
@@ -92,12 +92,9 @@ class SelectorBIC(ModelSelector):
                 # Compute p using comment from @dana in the Slack thread
                 # https://ai-nd.slack.com/files/ylu/F4S90AJFR/number_of_parameters_in_bic.txt
                 parameters = num_states * (num_states - 1) + (num_states - 1) + 2 * self.num_features * num_states
-
-                if self.verbose:
-                    print("model created for {} with {} states".format(self.this_word, num_states))
                 logL = hmm_model.score(self.X, self.lengths)
                 bic = -2 * logL + parameters * np.log(self.num_datapoints)
-                if bic < best_hmm_model_bic:
+                if bic < best_hmm_model_bic: # lower scores are better
                     best_hmm_model = hmm_model
                     best_hmm_model_bic = bic
             except:
@@ -118,8 +115,45 @@ class SelectorDIC(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        # implement model selection based on DIC scores
+        best_hmm_model = None
+        best_hmm_model_dic = float("-inf")
+
+        # implement model selection based on DIC scores
+        for num_states in range(self.min_n_components, self.max_n_components + 1):
+            try:
+                hmm_model = self.base_model(num_states)
+                logL = hmm_model.score(self.X, self.lengths)
+                if self.verbose:
+                    print("logL for {} = {}".format(self.this_word, logL))
+                sum_other_logL = 0.0
+                other_words = (word for word in self.hwords.keys() if word != self.this_word)
+                other_word_count = 0
+                for word in other_words:
+                    other_X, other_lengths = self.hwords[word]
+                    try:
+                        other_logL = hmm_model.score(other_X, other_lengths)
+                        if self.verbose:
+                            print("other_logL for {} = {}".format(word, other_logL))
+                        other_word_count += 1
+                        sum_other_logL += other_logL
+                    except:
+                        if self.verbose:
+                            print("failure on {} with {} states".format(word, num_states))
+                        sum_other_logL += 0.0
+                if self.verbose:
+                    print("sum_other_logL = {}, other_word_count = {}".format(sum_other_logL, other_word_count))
+                if other_word_count != 0:
+                    dic = logL - sum_other_logL / other_word_count
+                    if self.verbose:
+                        print("dic = {}".format(dic))
+                    if dic > best_hmm_model_dic: # higher scores are better
+                        best_hmm_model = hmm_model
+                        best_hmm_model_dic = dic
+            except:
+                if self.verbose:
+                    print("failure on {} with {} states".format(self.this_word, num_states))
+        return best_hmm_model
 
 
 class SelectorCV(ModelSelector):
