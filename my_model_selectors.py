@@ -36,13 +36,18 @@ class ModelSelector(object):
     def select(self):
         raise NotImplementedError
 
-    def base_model(self, num_states):
+    def base_model(self, num_states, X = None, lengths = None):
+        if X is None:
+            X = self.X
+        if lengths is None:
+            lengths = self.lengths
+
         # with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         # warnings.filterwarnings("ignore", category=RuntimeWarning)
         try:
             hmm_model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
-                                    random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
+                                    random_state=self.random_state, verbose=False).fit(X, lengths)
             if self.verbose:
                 print("model created for {} with {} states".format(self.this_word, num_states))
             return hmm_model
@@ -50,7 +55,6 @@ class ModelSelector(object):
             if self.verbose:
                 print("failure on {} with {} states".format(self.this_word, num_states))
             return None
-
 
 class SelectorConstant(ModelSelector):
     """ select the model with value self.n_constant
@@ -119,7 +123,6 @@ class SelectorDIC(ModelSelector):
         best_hmm_model = None
         best_hmm_model_dic = float("-inf")
 
-        # implement model selection based on DIC scores
         for num_states in range(self.min_n_components, self.max_n_components + 1):
             try:
                 hmm_model = self.base_model(num_states)
@@ -164,5 +167,34 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        # implement model selection using CV
+        best_hmm_model = None
+        best_hmm_model_logL = float("-inf")
+
+        # determine number of splits
+        n_splits = len(self.sequences)
+        if n_splits > 3:
+            n_splits = 3
+        elif n_splits <= 1:
+            return None # insufficient data to perform Kfold cross validation
+        if self.verbose:
+            print("number of splits = {}".format(n_splits))
+
+        for num_states in range(self.min_n_components, self.max_n_components + 1):
+            # split on n_splits
+            kf = KFold(n_splits, shuffle = True, random_state = self.random_state)
+
+            # Try out each fold; train on the training set and score against the test set
+            for train_index, test_index in kf.split(self.sequences):
+                try:
+                    X_train, lengths_train = combine_sequences(train_index, self.sequences)
+                    hmm_model = self.base_model(num_states, X_train, lengths_train)
+                    X_test, lengths_test = combine_sequences(test_index, self.sequences)
+                    logL = hmm_model.score(X_test, lengths_test)
+                    if logL > best_hmm_model_logL:
+                        best_hmm_model = hmm_model
+                        best_hmm_model_logL = logL
+                except:
+                    if self.verbose:
+                        print("failure on {} with {} states".format(self.this_word, num_states))
+        return best_hmm_model
